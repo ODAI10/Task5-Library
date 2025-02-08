@@ -1,132 +1,312 @@
-// put لتعديل كل الداتا  
-// patch لتعديل جزء من الداتا
 
 
 
-const express = require("express") ;
 
-const app = express();
+const express = require("express") ;        
 
-app.use(express.json())
+const mySql = require("mysql2")             
 
-class Books {
-    constructor(id,name,title){
-        this.id = id
-        this.name = name
-        this.title = title
+const app = express()                     
+
+app.use(express.json());
+
+
+// (1) configure mysql Connection   
+
+const Connection = mySql.createConnection({
+    host: 'localhost',
+    user:"root",
+    password:"82sql82",
+    database:"library"
+})
+
+
+// (2) connect to sql
+
+Connection.connect((err)=>{
+    if(err){
+        console.log("error connection : ", err)
     }
+})
 
-    changeTranslation(languge){
-        this.title = `${this.title} - (${languge})`
 
-    }
+// (3) Add a new book
 
-    static validate(book){
-        if(!(book instanceof Books)) return "book must be instance";
-        if(!book.id || typeof book.id !== "number") return "book id must be number and not empty";   // !book.id  ==> ان القيمة غير موجودةاو فارغة
-        if(!book.name || typeof book.name !== "string") return "Must be a string and not empty"
-        if(!book.title || typeof book.title !== "string") return "Must be a string and not empty"
-    
-        return null
-    }
+app.post('/books',(req,res)=>{
+    const {id,name,title} = req.body
 
-}
+    const query = 'insert into books (id,name,title) values (?,?,?)'
 
-let books = []
+    Connection.query(query,[id,name,title],(err)=>{
+        if(err){
+            return res.status(500).json({error:"Error adding a new book",details:err.message})
+        }
+         res.status(201).json({message: "Book has been added"} )
+    })
+})
 
-app.post("/books",(req,res)=>{
-    const {id,name,title} = req.body ;
 
-    if(books.some((book)=>book.id ===id)){
-        return res.status(400).json({error:"This book is already exist"})
-    }
 
-    const newBook = new Books(id,name,title)
-    const error = Books.validate(newBook)
+//  (4) get all books
 
-    if(error) return res.status(400).json({error})
+app.get('/books',(req,res)=>{
+    const query = 'select * from books'
+    Connection.query(query,(err,result)=>{
+        if(err){
+            return res.status(500).json({errro: "error",details:err.message})
+
+        }
+        res.json(result)
+    })
+})
+
+
+//  (5) get one book
+
+app.get('/books/:id', (req, res) => {
+    const query = "SELECT * FROM books WHERE id = ?";  
+
+    Connection.query(query, [req.params.id], (err, result) => {
+        if (err) {
+            return res.status(500).json({ error: "error ", details: err.message });
+        } 
         
-        books.push(newBook)
-        res.status(201).json({message:"Book has been added",book:newBook})
+        // موجود  id  يتاكد اذا  
+        if(result.length === 0){
+            return res.status(404).json({
+                message : "This id not found"
+            })
+        }
+        res.json(result)
 
-})
-
-
-// show all books
-app.get("/books",(req,res)=>{
-    res.json(books)
-})
-
-
-// show one book
-app.get("/books/:id", (req, res) => {
-
-   const bookId = req.params.id
-   const  book = books.find(b=> b.id === parseInt(bookId))
-
-   if(book){
-        res.json({book})
-   }
-   else{
-    res.status(404).json({ message: "Book not found" });
-   }
-
-
+    });
 });
 
-// update the book
+
+// update book
+
 app.put("/books/:id",(req,res)=>{
-    const bookId = parseInt(req.params.id,10)
-    const bookIndex = books.findIndex((book)=>book.id === bookId)    // id عشان ادور ع كتاب عن طريق ال 
+    const {name,title} = req.body ; 
+    
+    const query = "update books set name=? ,title=?  where id =?"
 
-    if(bookIndex === -1){
-        return res.status(400).json({error:"Soory book not found"})
-    }
-    const {name,title} = req.body
-
-    if(name) books[bookIndex].name = name
-    if(title) books[bookIndex].title = title
-
-    res.status(200).json({message:"Book has been updated",book:books[bookIndex]})
+    Connection.query(query,[name,title,req.params.id],(err,result)=>{
+        if (err) {
+            return res.status(500).json({ error: "error updating the book", 
+                details: err.message });
+        } 
+        if(result.affectedRows===0){
+            return res.status(404).json({
+                message:"Book updating not found"
+            })
+        }
+        res.json({
+            message:"Book has been update"
+        })
+    })
+  
 })
+
 
 
 // Delete book 
 
 app.delete("/books/:id",(req,res)=>{
-    const bookId = parseInt(req.params.id,10)
-    const bookIndex = books.findIndex((book)=>book.id === bookId)    // id عشان ادور ع كتاب عن طريق ال 
+    const query = "DELETE FROM books WHERE ID=?"
 
-    if(bookIndex === -1){
-        return res.status(400).json({error:"Soory book not found"})
-    }
-    books.splice(bookIndex,1)
-    return res.status(200).json({message:"Deleted book successfuly"})
-})
+    Connection.query(query,[req.params.id],(err,result)=>{
+
+        if (err) {
+            return res.status(500).json({ error: "error delete the book", 
+                details: err.message });
+        } 
+
+        if(result.affectedRows===0){
+            return res.status(404).json({
+                message:"The book you want to delete was not found"
+            })
+        }
+        res.json({
+            message:"Book has been delete"
+        })
+})})
 
 
-// translation
+// update translation 
 
 app.patch("/books/:id/translation",(req,res)=>{
-
-    const bookId = parseInt(req.params.id,10)
-    const languge = req.body.languge
-
-    console.log(languge)
+    const {languge} = req.body
+    
     if(!languge || typeof languge !== "string"){
         return res.status(400).json({error:"Sorry invalid languge"})
     }
+    const query = "UPDATE books SET title = CONCAT(title, '-(', ?, ')') WHERE id = ?"
 
-    const book = books.find((b)=>b.id === bookId)
-    if(!book) return res.status(404).json({error:"Sorry book not founr"})
 
-        book.changeTranslation(languge);
-
-        return res.status(200).json({ message: "Translation updated successfully", book });
+    Connection.query(query,[languge,req.params.id],(err,result)=>{
+        if (err) {
+            return res.status(500).json({ error: "error updating the book translation", 
+                details: err.message });
+        } 
+        if(result.affectedRows===0){
+            return res.status(404).json({
+                message:"Book updating not found"
+            })
+        }
+        res.json({
+            message:"Book has been update translation"
+        })
+    })
+  
 })
+
+
+
+
+// (TASK)
+
+// Bookshop  (get bookshop by id)
+
+app.get("/bookshop/:id",(req,res)=>{
+    const query = "SELECT * FROM bookshop WHERE shop_id =?"
+    Connection.query(query,[req.params.id],(err,result)=>{
+        if(err){
+            return res.status(500).json({error :"Error bookshop",details:err.message})
+        }
+        if(result.length === 0){
+            return res.status(404).json({message:"Bookshop not found"})
+        }
+        res.json(result)
+    })  
+})
+
+
+// Bookshop  (get cities  )
+
+app.get("/cities",(req,res)=>{
+    const query = "SELECT city FROM bookshop "
+
+    Connection.query(query,(err,result)=>{
+        if(err){
+            return res.status(500).json({error :"Error cities",details:err.message})   
+        }
+        if(result.length === 0){
+            return res.status(404).json({message:"This city not found"})
+        }
+        res.json(result)
+    })
+})
+
+
+// Bookshop  (get bookshop by name  )
+
+app.get("/bookshop/name/:name",(req,res)=>{
+    const query = "SELECT * FROM bookshop WHERE name=?;"
+
+    Connection.query(query,[req.params.name],(err,result)=>{
+        if(err){
+            return res.status(500).json({error:"Error get bookshop by name",details:err.message})
+        }
+        if(result.length === 0){
+            return res.status(404).json({message:"This bookshop name not found"})
+
+        }
+        res.json(result)
+    })
+  
+})
+
+
+// Bookshop  (get bookshop by Email  )
+
+app.get("/bookshop/email/:email",(req,res)=>{
+    const query = "SELECT * FROM bookshop WHERE email=?"
+
+    Connection.query(query,[req.params.email],(err,result)=>{
+        if(err){
+            return res.status(500).json({error:"Error get bookshop by email",details:err.message})
+        }
+        if(res.length === 0){
+            return res.status(404).json({message:"This bookshop emaol not found"})
+
+        }
+        res.json(result)
+    })
+  
+})
+
+
+// update name & email
+app.put("/bookshop/:id",(req,res)=>{
+    const { name,email } = req.body; 
+    const query = "update bookshop set name=? , email=?  where shop_id =?"
+
+    Connection.query(query,[name,email,req.params.id],(err,result)=>{
+
+        if(err){
+            return res.status(500).json({error :"Error Update  ",details:err.message})   
+
+        }
+        if(result.affectedRows ===0){
+            return res.status(404).json({  message:" updating not found"   })
+        }
+        res.json({ message:"update successfully"})
+
+    })
+
+})
+
+
+// Add bookshop
+app.post("/bookshop",(req,res)=>{
+    const {name,city,contat,email} = req.body
+
+    const query = "insert into bookshop (name,city,contat,email) values (?,?,?,?)"
+
+
+    Connection.query(query,[name,city,contat,email],(err)=>{
+        if(err){
+            return res.status(500).json({error:"Error adding ",details:err.message})
+        }
+         res.status(201).json({message: " Add successfully"} )
+    })
+})
+
+
+// delete one  bookshop
+
+
+app.delete("/bookshop/:id",(req,res)=>{
+    const query = "DELETE  FROM bookshop WHERE shop_id=?"
+
+    Connection.query(query,[req.params.id],(err,result)=>{
+
+        if (err) {
+            return res.status(500).json({ error: "error delete the bookshop", 
+                details: err.message });
+        } 
+
+        if(result.affectedRows===0){
+            return res.status(404).json({
+                message:"The bookshop you want to delete was not found"
+            })
+        }
+        res.json({
+            message:"Bookshop has been delete"
+        })
+})})
+
+
 
 const port = 3000
 
 app.listen(port,()=>{
     console.log(`liabrary system started on http://127.0.0.1/:${port}`)
 })
+
+
+
+
+
+
+
